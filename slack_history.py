@@ -168,6 +168,11 @@ if __name__ == "__main__":
 
   dryRun = args.dryRun
 
+  if not dryRun:
+    with open('user_id_to_username_map.json', 'w') as outFile:
+      print("writing userid to username mapping")
+      json.dump(userIdNameMap, outFile, indent=4)
+
   if not args.skipChannels:
     getChannels(slack, dryRun)
 
