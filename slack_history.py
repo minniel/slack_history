@@ -72,7 +72,7 @@ def getChannels(slack, dryRun):
       fileName = channel['name'] + ".json"
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile)
+        json.dump(messages, outFile, indent=4)
 
 # fetch and write history for all direct message conversations
 # also known as IMs in the slack API.
@@ -91,7 +91,7 @@ def getDirectMessages(slack, userIdNameMap, dryRun):
       fileName = name + ".json"
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile)
+        json.dump(messages, outFile, indent=4)
 
 # fetch and write history for all private channels
 # also known as groups in the slack API.
@@ -110,7 +110,7 @@ def getPrivateChannels(slack, dryRun):
       messages = getHistory(slack.groups, group['id'])
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile)
+        json.dump(messages, outFile, indent=4)
 
 # fetch all users for the channel and return a map userId -> userName
 def getUserMap(slack):
