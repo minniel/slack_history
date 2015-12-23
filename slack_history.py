@@ -1,7 +1,7 @@
 from slacker import Slacker
 import json
 import argparse
-
+import os
 # This script finds all channels, private channels and direct messages
 # that your user participates in, downloads the complete history for
 # those converations and writes each conversation out to seperate json files.
@@ -57,6 +57,10 @@ def getHistory(pageableObject, channelId, pageSize = 100):
       break
   return messages
 
+def mkdir(directory):
+  if not os.path.exists(directory):
+    os.makedirs(directory)
+
 # fetch and write history for all public channels
 def getChannels(slack, dryRun):
   channels = slack.channels.list().body['channels']
@@ -66,17 +70,20 @@ def getChannels(slack, dryRun):
     print(channel['name'])
   
   if not dryRun:
+    parentDir = "channels"
+    mkdir(parentDir)
     for channel in channels:
       print("getting history for channel {0}".format(channel['name']))
+      fileName = "{parent}/{file}.json".format(parent = parentDir, file = channel['name'])
       messages = getHistory(slack.channels, channel['id'])
-      fileName = channel['name'] + ".json"
+      channelInfo = slack.channels.info(channel['id']).body['channel']
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile, indent=4)
+        json.dump({'channel_info': channelInfo, 'messages': messages }, outFile, indent=4)
 
 # fetch and write history for all direct message conversations
 # also known as IMs in the slack API.
-def getDirectMessages(slack, userIdNameMap, dryRun):
+def getDirectMessages(slack, ownerId, userIdNameMap, dryRun):
   dms = slack.im.list().body['ims']
   
   print("\nfound direct messages (1:1) with the following users:")
@@ -84,33 +91,40 @@ def getDirectMessages(slack, userIdNameMap, dryRun):
     print(userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)"))
   
   if not dryRun:
+    parentDir = "direct_messages"
+    mkdir(parentDir)
     for dm in dms:
       name = userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)")
       print("getting history for direct messages with {0}".format(name))
+      fileName = "{parent}/{file}.json".format(parent = parentDir, file = name)
       messages = getHistory(slack.im, dm['id'])
-      fileName = name + ".json"
+      channelInfo = {'members': [dm['user'], ownerId]}
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile, indent=4)
+        json.dump({'channel_info': channelInfo, 'messages': messages}, outFile, indent=4)
 
 # fetch and write history for all private channels
 # also known as groups in the slack API.
 def getPrivateChannels(slack, dryRun):
   groups = slack.groups.list().body['groups']
   
-  print("\nfound groups:")
+  print("\nfound private channels:")
   for group in groups:
     print("{0}: ({1} members)".format(group['name'], len(group['members'])))
   
   if not dryRun:
+    parentDir = "private_channels"
+    mkdir(parentDir)
+
     for group in groups:
       messages = []
-      fileName = group['name'] + ".json"
-      print("getting history for group {0} with id {1}".format(group['name'], group['id']))
+      print("getting history for private channel {0} with id {1}".format(group['name'], group['id']))
+      fileName = "{parent}/{file}.json".format(parent = parentDir, file = group['name'])
       messages = getHistory(slack.groups, group['id'])
+      channelInfo = slack.groups.info(group['id']).body['group']
       with open(fileName, 'w') as outFile:
         print("writing {0} records to {1}".format(len(messages), fileName))
-        json.dump(messages, outFile, indent=4)
+        json.dump({'channel_info': channelInfo, 'messages': messages}, outFile, indent=4)
 
 # fetch all users for the channel and return a map userId -> userName
 def getUserMap(slack):
@@ -128,6 +142,7 @@ def doTestAuth(slack):
   teamName = testAuth['team']
   currentUser = testAuth['user']
   print("Successfully authenticated for team {0} and user {1} ".format(teamName, currentUser))
+  return testAuth
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='download slack history')
@@ -169,9 +184,13 @@ if __name__ == "__main__":
   dryRun = args.dryRun
 
   if not dryRun:
-    with open('user_id_to_username_map.json', 'w') as outFile:
-      print("writing userid to username mapping")
-      json.dump(userIdNameMap, outFile, indent=4)
+    with open('metadata.json', 'w') as outFile:
+      print("writing metadata")
+      metadata = {
+        'auth_info': testAuth,
+        'users': userIdNameMap
+      }
+      json.dump(metadata, outFile, indent=4)
 
   if not args.skipChannels:
     getChannels(slack, dryRun)
@@ -180,4 +199,4 @@ if __name__ == "__main__":
     getPrivateChannels(slack, dryRun)
 
   if not args.skipDirectMessages:
-    getDirectMessages(slack, userIdNameMap, dryRun)
+    getDirectMessages(slack, testAuth['user_id'], userIdNameMap, dryRun)
