@@ -2,6 +2,10 @@ from slacker import Slacker
 import json
 import argparse
 import os
+import shutil
+import copy
+from datetime import datetime
+
 # This script finds all channels, private channels and direct messages
 # that your user participates in, downloads the complete history for
 # those converations and writes each conversation out to seperate json files.
@@ -57,9 +61,65 @@ def getHistory(pageableObject, channelId, pageSize = 100):
 			break
 	return messages
 
+
 def mkdir(directory):
-	if not os.path.exists(directory):
+	if not os.path.isdir(directory):
 		os.makedirs(directory)
+
+
+# create datetime object from slack timestamp ('ts') string
+def parseTimeStamp( timeStamp ):
+	if '.' in timeStamp:
+		t_list = timeStamp.split('.')
+		if len( t_list ) != 2:
+			raise ValueError( 'Invalid time stamp' )
+		else:
+			return datetime.utcfromtimestamp( t_list[0] )
+
+
+# move channel files from old directory to one with new channel name
+def channelRename( oldRoomName, newRoomName ):
+	mkdir( newRoomName )
+	for fileName in os.listdirs( oldRoomName ):
+		shutil.move( os.path.join( oldRoomName, fileName ), newRoomName )
+	os.rmdir( oldRoomName )
+
+
+def writeMessageFile( fileName, messages ):
+	with open(fileName, 'w') as outFile:
+		json.dump( messages, outFile, indent=4)
+
+
+# parse messages by date
+def parseMessages( parentDir, roomDir, messages, roomType ):
+	nameChangeFlag = roomType + "_name"
+
+	currentFileDate = ''
+	currentMessages = []
+	for message in messages:
+		#first store the date of the next message
+		ts = parseTimeStamp( message['ts'] )
+		fileDate = '{:%Y-%m-%d}'.format(ts)
+
+		#if it's on a different day, write out the previous day's messages
+		if fileDate != currentFileDate:
+			outFileName = '{parent}/{room}/{file}.json'.format( parent = parentDir, room = roomDir, file = currentFileDate )
+			writeMessageFile( outFileName, currentMessages )
+			currentFileName = fileName
+			currentMessages = []
+
+		# check if current message is a name change
+		# dms won't have name change events
+		if message['subtype'] == nameChangeFlag:
+			roomDir = message['name']
+			oldRoomPath = '{parent}/{room}'.format( parent = parentDir, room = message['old_name'] )
+			newRoomPath = '{parent}/{room}'.format( parent = parentDir, room = roomDir )
+			channelRename( oldChannelPath, newChannelPath )
+
+		currentMessages.append( message )
+	outFileName = '{parent}/{room}/{file}.json'.format( parent = parentDir, room = roomDir, file = currentFileDate )
+	writeMessageFile( outFileName, currentMessages )
+
 
 # fetch and write history for all public channels
 def getChannels(slack, dryRun):
@@ -70,16 +130,45 @@ def getChannels(slack, dryRun):
 		print(channel['name'])
 
 	if not dryRun:
-		parentDir = "channels"
+		parentDir = "channel"
 		mkdir(parentDir)
 		for channel in channels:
 			print("getting history for channel {0}".format(channel['name']))
-			fileName = "{parent}/{file}.json".format(parent = parentDir, file = channel['name'])
+			channelDir = channel['name']
+			mkdir(channelDir)
 			messages = getHistory(slack.channels, channel['id'])
-			channelInfo = slack.channels.info(channel['id']).body['channel']
-			with open(fileName, 'w') as outFile:
-				print("writing {0} records to {1}".format(len(messages), fileName))
-				json.dump({'channel_info': channelInfo, 'messages': messages }, outFile, indent=4)
+			parse_messages(parentDir, channelDir, messages, 'channel')
+
+
+# write channels.json file
+def dumpChannelFile( slack ):
+	print("Making channels file")
+	channels = slack.channels.list().body['channels']
+
+	#have to convert private channels to channels to be read in properly
+	groups = slack.groups.list().body['groups']
+	print( str(len(channels) ) )
+	for group in groups:
+		print( str(len(channels) ) )
+		new_channel = copy.copy(channels[0])
+		new_channel['id'] = group['id']
+		new_channel['name'] = group['name']
+		new_channel['created'] = group['created']
+		new_channel['creator'] = group['creator']
+		new_channel['is_archived'] = group['is_archived']
+		new_channel['is_channel'] = True
+		new_channel['is_general'] = False
+		new_channel['is_member'] = True
+		new_channel['members'] = group['members']
+		new_channel['num_members'] = len(group['members'])
+		new_channel['purpose'] = group['purpose']
+		new_channel['topic'] = group['topic']
+		channels.append( new_channel )
+
+	#We will be overwriting this file on each run.
+	with open('channels.json', 'w') as outFile:
+		json.dump( channels , outFile, indent=4)
+
 
 # fetch and write history for all direct message conversations
 # also known as IMs in the slack API.
@@ -96,12 +185,14 @@ def getDirectMessages(slack, ownerId, userIdNameMap, dryRun):
 		for dm in dms:
 			name = userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)")
 			print("getting history for direct messages with {0}".format(name))
+			dmDir = name
 			fileName = "{parent}/{file}.json".format(parent = parentDir, file = name)
 			messages = getHistory(slack.im, dm['id'])
 			channelInfo = {'members': [dm['user'], ownerId]}
 			with open(fileName, 'w') as outFile:
 				print("writing {0} records to {1}".format(len(messages), fileName))
 				json.dump({'channel_info': channelInfo, 'messages': messages}, outFile, indent=4)
+
 
 # fetch and write history for all private channels
 # also known as groups in the slack API.
@@ -135,6 +226,12 @@ def getUserMap(slack):
 		userIdNameMap[user['id']] = user['name']
 	print("found {0} users ".format(len(users)))
 	return userIdNameMap
+
+# stores json of user info
+def dumpUserFile(slack):
+	#write to user file, any existing file needs to be overwritten.
+	with open( "users.json", 'w') as userFile:
+		json.dump( slack.users.list().body['members'], userFile, indent=4 )
 
 # get basic info about the slack channel to ensure the authentication token works
 def doTestAuth(slack):
@@ -184,13 +281,9 @@ if __name__ == "__main__":
 	dryRun = args.dryRun
 
 	if not dryRun:
-		with open('metadata.json', 'w') as outFile:
-			print("writing metadata")
-			metadata = {
-				'auth_info': testAuth,
-				'users': userIdNameMap
-			}
-			json.dump(metadata, outFile, indent=4)
+		#write channel and user jsons
+		dumpUserFile(slack)
+		dumpChannelFile(slack)
 
 	if not args.skipChannels:
 		getChannels(slack, dryRun)
