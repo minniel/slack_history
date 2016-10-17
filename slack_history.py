@@ -110,7 +110,7 @@ def parseMessages( parentDir, roomDir, messages, roomType ):
 
 		# check if current message is a name change
 		# dms won't have name change events
-		if message['subtype'] == nameChangeFlag:
+		if roomType != "im" and message['subtype'] == nameChangeFlag:
 			roomDir = message['name']
 			oldRoomPath = '{parent}/{room}'.format( parent = parentDir, room = message['old_name'] )
 			newRoomPath = '{parent}/{room}'.format( parent = parentDir, room = roomDir )
@@ -180,18 +180,14 @@ def getDirectMessages(slack, ownerId, userIdNameMap, dryRun):
 		print(userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)"))
 
 	if not dryRun:
-		parentDir = "direct_messages"
+		parentDir = "direct_message"
 		mkdir(parentDir)
 		for dm in dms:
-			name = userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)")
+			name = userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)")#note: double check naming of dm directory
 			print("getting history for direct messages with {0}".format(name))
 			dmDir = name
-			fileName = "{parent}/{file}.json".format(parent = parentDir, file = name)
 			messages = getHistory(slack.im, dm['id'])
-			channelInfo = {'members': [dm['user'], ownerId]}
-			with open(fileName, 'w') as outFile:
-				print("writing {0} records to {1}".format(len(messages), fileName))
-				json.dump({'channel_info': channelInfo, 'messages': messages}, outFile, indent=4)
+			parseMessages( parentDir, dmDir, messages, "im")
 
 
 # fetch and write history for all private channels
@@ -206,16 +202,12 @@ def getPrivateChannels(slack, dryRun):
 	if not dryRun:
 		parentDir = "private_channels"
 		mkdir(parentDir)
-
 		for group in groups:
 			messages = []
 			print("getting history for private channel {0} with id {1}".format(group['name'], group['id']))
-			fileName = "{parent}/{file}.json".format(parent = parentDir, file = group['name'])
+			groupDir = group['name']
 			messages = getHistory(slack.groups, group['id'])
-			channelInfo = slack.groups.info(group['id']).body['group']
-			with open(fileName, 'w') as outFile:
-				print("writing {0} records to {1}".format(len(messages), fileName))
-				json.dump({'channel_info': channelInfo, 'messages': messages}, outFile, indent=4)
+			parseMessages( parentDir, groupDir, messages, 'group' )
 
 # fetch all users for the channel and return a map userId -> userName
 def getUserMap(slack):
