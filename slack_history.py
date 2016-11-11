@@ -74,13 +74,16 @@ def parseTimeStamp( timeStamp ):
 		if len( t_list ) != 2:
 			raise ValueError( 'Invalid time stamp' )
 		else:
-			return datetime.utcfromtimestamp( t_list[0] )
+			return datetime.utcfromtimestamp( float(t_list[0]) )
 
 
 # move channel files from old directory to one with new channel name
 def channelRename( oldRoomName, newRoomName ):
+	# check if any files need to be moved
+	if not os.path.isdir( oldRoomName ):
+		return
 	mkdir( newRoomName )
-	for fileName in os.listdirs( oldRoomName ):
+	for fileName in os.listdir( oldRoomName ):
 		shutil.move( os.path.join( oldRoomName, fileName ), newRoomName )
 	os.rmdir( oldRoomName )
 
@@ -105,16 +108,16 @@ def parseMessages( parentDir, roomDir, messages, roomType ):
 		if fileDate != currentFileDate:
 			outFileName = '{parent}/{room}/{file}.json'.format( parent = parentDir, room = roomDir, file = currentFileDate )
 			writeMessageFile( outFileName, currentMessages )
-			currentFileName = fileName
+			currentFileDate = fileDate
 			currentMessages = []
 
 		# check if current message is a name change
 		# dms won't have name change events
-		if roomType != "im" and message['subtype'] == nameChangeFlag:
+		if roomType != "im" and ( 'subtype' in message ) and message['subtype'] == nameChangeFlag:
 			roomDir = message['name']
 			oldRoomPath = '{parent}/{room}'.format( parent = parentDir, room = message['old_name'] )
 			newRoomPath = '{parent}/{room}'.format( parent = parentDir, room = roomDir )
-			channelRename( oldChannelPath, newChannelPath )
+			channelRename( oldRoomPath, newRoomPath )
 
 		currentMessages.append( message )
 	outFileName = '{parent}/{room}/{file}.json'.format( parent = parentDir, room = roomDir, file = currentFileDate )
@@ -135,9 +138,9 @@ def getChannels(slack, dryRun):
 		for channel in channels:
 			print("getting history for channel {0}".format(channel['name']))
 			channelDir = channel['name']
-			mkdir(channelDir)
+			mkdir( os.path.join( parentDir, channelDir ) )
 			messages = getHistory(slack.channels, channel['id'])
-			parse_messages(parentDir, channelDir, messages, 'channel')
+			parseMessages( parentDir, channelDir, messages, 'channel')
 
 
 # write channels.json file
@@ -186,8 +189,9 @@ def getDirectMessages(slack, ownerId, userIdNameMap, dryRun):
 			name = userIdNameMap.get(dm['user'], dm['user'] + " (name unknown)")#note: double check naming of dm directory
 			print("getting history for direct messages with {0}".format(name))
 			dmDir = name
+			mkdir('{parent}/{dm}'.format( parent = parentDir, dm = dmDir ))
 			messages = getHistory(slack.im, dm['id'])
-			parseMessages( parentDir, dmDir, messages, "im")
+			parseMessages( parentDir, dmDir, messages, "im" )
 
 
 # fetch and write history for all private channels
@@ -206,6 +210,7 @@ def getPrivateChannels(slack, dryRun):
 			messages = []
 			print("getting history for private channel {0} with id {1}".format(group['name'], group['id']))
 			groupDir = group['name']
+			mkdir( '{parent}/{group}'.format( parent = parentDir, group = groupDir ) )
 			messages = getHistory(slack.groups, group['id'])
 			parseMessages( parentDir, groupDir, messages, 'group' )
 
