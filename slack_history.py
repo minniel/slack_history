@@ -89,6 +89,11 @@ def channelRename( oldRoomName, newRoomName ):
 
 
 def writeMessageFile( fileName, messages ):
+	directory = os.path.dirname(fileName)
+
+	if not os.path.isdir( directory ):
+		mkdir( directory )
+
 	with open(fileName, 'w') as outFile:
 		json.dump( messages, outFile, indent=4)
 
