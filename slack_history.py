@@ -55,7 +55,8 @@ def getHistory(pageableObject, channelId, pageSize = 100):
 				count	 = pageSize
 			).body
 		except:
-			time.sleep(5)
+			time.sleep(1)
+			continue
 			
 		messages.extend(response['messages'])
 
