@@ -4,6 +4,7 @@ import argparse
 import os
 import shutil
 import copy
+import time
 from datetime import datetime
 
 # This script finds all channels, private channels and direct messages
@@ -46,13 +47,17 @@ def getHistory(pageableObject, channelId, pageSize = 100):
 	lastTimestamp = None
 
 	while(True):
-		response = pageableObject.history(
-			channel = channelId,
-			latest	= lastTimestamp,
-			oldest	= 0,
-			count	 = pageSize
-		).body
-
+		try:
+			response = pageableObject.history(
+				channel = channelId,
+				latest	= lastTimestamp,
+				oldest	= 0,
+				count	 = pageSize
+			).body
+		except:
+			time.sleep(1)
+			continue
+			
 		messages.extend(response['messages'])
 
 		if (response['has_more'] == True):
